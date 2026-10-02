@@ -3,14 +3,14 @@ import { badRequest, notFound, readJson, send } from '../lib/http.js';
 import { requireUser } from '../lib/auth.js';
 import { sanitizeDoc, docToText, readingMinutes, countImages, makeExcerpt, slugify } from '../lib/content.js';
 
-const LIST_COLUMNS = `id, slug, title, subtitle, excerpt, cover_image, cover_alt, category, tags, status,
+const LIST_COLUMNS = `id, slug, title, subtitle, excerpt, excerpt_custom, cover_image, cover_alt, category, tags, status,
   featured, author_name, reading_minutes, published_at, deleted_at, created_at, updated_at`;
 
 const PUBLIC_WHERE = `status = 'published' AND deleted_at IS NULL AND published_at <= ?`;
 
 function serialize(row, { withContent = false } = {}) {
   if (!row) return null;
-  const post = { ...row, tags: safeJson(row.tags, []), featured: Boolean(row.featured) };
+  const post = { ...row, tags: safeJson(row.tags, []), featured: Boolean(row.featured), excerpt_custom: Boolean(row.excerpt_custom) };
   if (withContent) post.content = safeJson(row.content, { type: 'doc', content: [] });
   else delete post.content;
   delete post.plain_text;
@@ -90,15 +90,13 @@ function buildFields(body, existing) {
     f.reading_minutes = readingMinutes(text, countImages(doc));
   }
 
-  // Excerpt: explicit wins; otherwise derive from content when content changes.
+  // Excerpt: a hand-written summary wins; an empty one means "derive it from the story".
   if (body.excerpt !== undefined && String(body.excerpt).trim()) {
     f.excerpt = String(body.excerpt).trim().slice(0, 400);
-  } else if (body.excerpt !== undefined) {
+    f.excerpt_custom = 1;
+  } else if (body.excerpt !== undefined || (f.plain_text !== undefined && !existing?.excerpt_custom)) {
     f.excerpt = makeExcerpt(f.plain_text ?? existing?.plain_text ?? '');
-  } else if (f.plain_text !== undefined) {
-    // Content changed: refresh the excerpt only if it was auto-generated before.
-    const wasAuto = !existing?.excerpt || existing.excerpt === makeExcerpt(existing.plain_text || '');
-    if (wasAuto) f.excerpt = makeExcerpt(f.plain_text);
+    f.excerpt_custom = 0;
   }
 
   if (body.status !== undefined) {
@@ -106,6 +104,8 @@ function buildFields(body, existing) {
     f.status = body.status;
     if (body.status === 'published') {
       f.published_at = body.published_at ? parseDate(body.published_at) : existing?.published_at || nowIso();
+    } else if (body.published_at === null) {
+      f.published_at = null;
     }
   } else if (body.published_at !== undefined) {
     f.published_at = body.published_at ? parseDate(body.published_at) : null;

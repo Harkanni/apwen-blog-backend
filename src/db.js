@@ -70,6 +70,8 @@ const migrations = [
     value TEXT NOT NULL
   );
   `,
+  // 2: remember whether the summary was written by hand (otherwise it is derived from the story)
+  `ALTER TABLE posts ADD COLUMN excerpt_custom INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 let db;

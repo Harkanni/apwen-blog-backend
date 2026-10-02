@@ -155,3 +155,21 @@ test('saves site settings and validates links', async () => {
   const ok = await api('/api/admin/settings', { method: 'PATCH', body: { instagram: 'https://instagram.com/apwen' } });
   assert.equal(ok.data.settings.instagram, 'https://instagram.com/apwen');
 });
+
+test('derives the summary unless one is written by hand, and unpublish clears the date', async () => {
+  const content = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'First words of the story.' }] }] };
+  const { data: created } = await api('/api/admin/posts', { method: 'POST', body: { title: 'Summary test', content } });
+  assert.equal(created.post.excerpt, 'First words of the story.');
+  assert.equal(created.post.excerpt_custom, false);
+  const { data: custom } = await api(`/api/admin/posts/${created.post.id}`, { method: 'PATCH', body: { excerpt: 'Hand written.' } });
+  assert.equal(custom.post.excerpt_custom, true);
+  const content2 = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Changed text.' }] }] };
+  const { data: kept } = await api(`/api/admin/posts/${created.post.id}`, { method: 'PATCH', body: { content: content2 } });
+  assert.equal(kept.post.excerpt, 'Hand written.');
+  const { data: cleared } = await api(`/api/admin/posts/${created.post.id}`, { method: 'PATCH', body: { excerpt: '' } });
+  assert.equal(cleared.post.excerpt, 'Changed text.');
+  await api(`/api/admin/posts/${created.post.id}`, { method: 'PATCH', body: { status: 'published' } });
+  const { data: un } = await api(`/api/admin/posts/${created.post.id}`, { method: 'PATCH', body: { status: 'draft', published_at: null } });
+  assert.equal(un.post.published_at, null);
+  assert.equal(un.post.state, 'draft');
+});
